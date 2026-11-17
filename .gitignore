@@ -1,0 +1,6 @@
+httpaas.exe
+httpaas
+uploads/*
+!uploads/.gitkeep
+data/instances.json
+*.log

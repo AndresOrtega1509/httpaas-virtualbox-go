@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HTTPaaS · Gestión de servicios</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {{if .HasPending}}<meta http-equiv="refresh" content="5">{{end}}
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div>
+        <div class="eyebrow">COMPUTACIÓN EN LA NUBE · HTTP COMO SERVICIO</div>
+        <h1>HTTPaaS</h1>
+        <p>Orquestación local de instancias Apache sobre VirtualBox.</p>
+      </div>
+      <div class="domain-pill"><span class="dot"></span>{{.Domain}}</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    {{if .Flash}}<div class="notice {{.FlashType}}">{{.Flash}}</div>{{end}}
+    {{if .Problems}}
+      <div class="notice danger">
+        <strong>Configuración pendiente.</strong>
+        <ul>{{range .Problems}}<li>{{.}}</li>{{end}}</ul>
+        <span>Ejecuta <code>run.ps1</code> y revisa <code>config.json</code>.</span>
+      </div>
+    {{end}}
+
+    <section class="architecture">
+      <div class="mini-card"><strong>VirtualBox</strong><span>VM Multiattach</span></div>
+      <div class="arrow">→</div>
+      <div class="mini-card"><strong>Debian + Apache</strong><span>Servicio HTTP</span></div>
+      <div class="arrow">→</div>
+      <div class="mini-card"><strong>Bind9</strong><span>DNS {{.Domain}}</span></div>
+    </section>
+
+    <section class="grid">
+      <article class="panel create-panel">
+        <div class="section-title">
+          <span class="step">01</span>
+          <div><h2>Aprovisionar servicio</h2><p>Publica un sitio estático o una aplicación HTTP ejecutable.</p></div>
+        </div>
+        <form action="/instances" method="post" enctype="multipart/form-data">
+          <label for="hostname">Nombre de host</label>
+          <div class="hostname-row">
+            <input id="hostname" name="hostname" required minlength="2" maxlength="32" pattern="[a-z][a-z0-9-]*[a-z0-9]" placeholder="ej. catalogo">
+            <span>.{{.Domain}}</span>
+          </div>
+          <small>Solo minúsculas, números y guiones.</small>
+
+          <label for="deployment_type">Tipo de despliegue</label>
+          <select id="deployment_type" name="deployment_type" onchange="toggleDeploymentFields()">
+            <option value="static">Sitio estático (HTML/CSS/JS)</option>
+            <option value="executable">Aplicación HTTP ejecutable</option>
+          </select>
+          <small>Las aplicaciones ejecutables se publican mediante <code>systemd</code> + Apache reverse proxy.</small>
+
+          <div id="executable-fields" class="exec-fields" hidden>
+            <label for="executable">Nombre del ejecutable dentro del ZIP</label>
+            <input id="executable" name="executable" placeholder="srvimglinux">
+
+            <label for="app_port">Puerto interno de la aplicación</label>
+            <input id="app_port" name="app_port" type="number" min="1024" max="65535" value="8000">
+
+            <label for="app_args">Argumentos de inicio</label>
+            <input id="app_args" name="app_args" placeholder="{port} {appdir}/fotos">
+            <small>Variables disponibles: <code>{port}</code> y <code>{appdir}</code>. Para srvimglinux: <code>{port} {appdir}/fotos</code>.</small>
+          </div>
+
+          <label for="sitezip">Paquete de despliegue (.zip)</label>
+          <input id="sitezip" name="sitezip" type="file" accept=".zip,application/zip" required>
+          <small id="zip-help">Sitio estático: el ZIP debe contener <code>index.html</code> en la raíz.</small>
+
+          <button type="submit" {{if .Problems}}disabled{{end}}>Crear y desplegar</button>
+        </form>
+      </article>
+
+      <article class="panel info-panel">
+        <div class="section-title">
+          <span class="step">02</span>
+          <div><h2>Flujo automatizado</h2><p>Sin intervención durante el aprovisionamiento.</p></div>
+        </div>
+        <ol class="flow">
+          <li><span>1</span> Crea una VM usando el disco Multiattach.</li>
+          <li><span>2</span> Asigna hostname e IP fija Host-Only.</li>
+          <li><span>3</span> Configura el DNS interno en Bind9.</li>
+          <li><span>4</span> Publica HTML directamente o ejecuta la app con systemd + proxy.</li>
+          <li><span>5</span> Publica el enlace en este dashboard.</li>
+        </ol>
+      </article>
+    </section>
+
+    <section class="instances">
+      <div class="instances-head">
+        <div><span class="step">03</span><h2>Instancias aprovisionadas</h2></div>
+        <span class="count">{{len .Instances}} total</span>
+      </div>
+
+      {{if .Instances}}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Host</th><th>Tipo</th><th>IP</th><th>Estado</th><th>Creada</th><th>Acciones</th></tr></thead>
+          <tbody>
+          {{range .Instances}}
+            <tr>
+              <td><strong>{{.Name}}</strong><div class="muted">{{.URL}}</div>{{if .Message}}<div class="message">{{.Message}}</div>{{end}}</td>
+              <td>{{if eq .DeploymentType "executable"}}<span class="type-pill executable">Ejecutable</span>{{else}}<span class="type-pill">Estático</span>{{end}}</td>
+              <td><code>{{.IP}}</code></td>
+              <td><span class="status status-{{.Status}}">{{.Status}}</span></td>
+              <td>{{fmtTime .CreatedAt}}</td>
+              <td class="actions">
+                {{if eq .Status "Activo"}}<a class="link-btn" href="{{.URL}}" target="_blank" rel="noopener">Abrir ↗</a>{{end}}
+                <form action="/instances/delete" method="post" onsubmit="return confirm('¿Eliminar {{.Name}} y su registro DNS?')">
+                  <input type="hidden" name="hostname" value="{{.Name}}">
+                  <button class="danger-btn" type="submit" {{if eq .Status "Eliminando"}}disabled{{end}}>Eliminar</button>
+                </form>
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+        <div class="empty"><strong>No hay instancias gestionadas todavía.</strong><span>Crea la primera desde el formulario superior.</span></div>
+      {{end}}
+    </section>
+  </main>
+
+  <footer><div class="wrap">HTTPaaS · VirtualBox + Debian + Apache + Bind9 + Go</div></footer>
+  <script>
+    function toggleDeploymentFields() {
+      const type = document.getElementById('deployment_type');
+      const fields = document.getElementById('executable-fields');
+      const exe = document.getElementById('executable');
+      const port = document.getElementById('app_port');
+      const help = document.getElementById('zip-help');
+      const isExec = type && type.value === 'executable';
+      fields.hidden = !isExec;
+      exe.required = isExec;
+      port.required = isExec;
+      help.innerHTML = isExec
+        ? 'Aplicación ejecutable: el ZIP debe contener el binario indicado en la raíz y todos sus recursos.'
+        : 'Sitio estático: el ZIP debe contener <code>index.html</code> en la raíz.';
+    }
+    document.addEventListener('DOMContentLoaded', toggleDeploymentFields);
+  </script>
+  {{if .ClearFlashURL}}
+  <script>
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, "/");
+    }
+  </script>
+  {{end}}
+</body>
+</html>
